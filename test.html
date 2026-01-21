@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>风控智能研判工作台 - V2.0</title>
+    <script src="https://gw.alipayobjects.com/os/lib/antv/g6/4.8.24/dist/g6.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #f0f2f5;
+            --card-bg: #ffffff;
+            --sidebar-bg: #001529;
+            --sidebar-text: #a6adb4;
+            --sidebar-active: #1890ff;
+            --text-primary: #1f1f1f;
+            --border-color: #e8e8e8;
+            --tag-bg: #e6f7ff;
+            --tag-text: #1890ff;
+        }
+        
+        body { margin: 0; padding: 0; font-family: -apple-system, sans-serif; background-color: var(--bg-color); height: 100vh; display: flex; overflow: hidden; }
+
+        /* ================= Layout Structure ================= */
+        /* 1. Left Sidebar Navigation */
+        .sidebar {
+            width: 64px;
+            background-color: var(--sidebar-bg);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding-top: 20px;
+            box-shadow: 2px 0 8px rgba(0,0,0,0.15);
+            z-index: 10;
+        }
+        .nav-item {
+            width: 40px;
+            height: 40px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: var(--sidebar-text);
+            font-size: 20px;
+            transition: all 0.3s;
+        }
+        .nav-item:hover { color: #fff; background: rgba(255,255,255,0.1); }
+        .nav-item.active { background-color: var(--sidebar-active); color: #fff; box-shadow: 0 4px 10px rgba(24,144,255,0.4); }
+
+        /* 2. Main Content Area */
+        .main-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            overflow: hidden;
+        }
+        
+        .header {
+            margin-bottom: 15px;
+            background: var(--card-bg);
+            padding: 15px 20px;
+            border-radius: 8px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .header h1 { margin: 0; font-size: 20px; color: #333; }
+        .case-meta span { background: var(--tag-bg); color: var(--tag-text); padding: 2px 8px; border-radius: 4px; font-size: 12px; margin-left: 8px; }
+
+        .content-wrapper {
+            display: flex;
+            gap: 20px;
+            height: 100%;
+        }
+
+        /* Center Panel (Switchable) */
+        .center-panel {
+            flex: 3;
+            background: var(--card-bg);
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* Right Panel (Fixed Agent Analysis) */
+        .right-panel {
+            flex: 1.5;
+            background: var(--card-bg);
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+            overflow-y: auto;
+            min-width: 300px;
+        }
+
+        /* ================= Views ================= */
+        /* View 1: Graph */
+        #view-graph { width: 100%; height: 100%; display: none; flex-direction: column; }
+        #g6-container { flex: 1; border: 1px solid #f0f0f0; background: #fafafa; border-radius: 4px; }
+
+        /* View 2: Knowledge Table */
+        #view-table { width: 100%; height: 100%; display: none; flex-direction: column; overflow-y: auto; }
+        
+        /* Table Styles */
+        .kb-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        .kb-table th, .kb-table td { text-align: left; padding: 12px; border-bottom: 1px solid var(--border-color); }
+        .kb-table th { background-color: #fafafa; color: #666; font-weight: 600; font-size: 13px; position: sticky; top: 0; }
+        .kb-table td { font-size: 13px; color: #333; }
+        .kb-table tr:hover { background-color: #f5faff; cursor: pointer; }
+        
+        .score-badge { 
+            display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: bold;
+        }
+        .score-high { background: #ffccc7; color: #f5222d; } /* High match */
+        .score-mid { background: #fffb8f; color: #d48806; }
+        
+        .type-badge {
+            border: 1px solid #d9d9d9; padding: 1px 4px; border-radius: 2px; font-size: 10px; color: #666;
+        }
+
+        /* Expert Timeline Styles (Right Panel) */
+        .timeline-item { padding-left: 20px; border-left: 2px solid #e8e8e8; padding-bottom: 20px; position: relative; }
+        .timeline-item::before { content: ''; position: absolute; left: -6px; top: 0; width: 10px; height: 10px; border-radius: 50%; background: #1890ff; border: 2px solid #fff; }
+        .t-title { font-weight: bold; margin-bottom: 4px; font-size: 14px; }
+        .t-desc { font-size: 12px; color: #666; line-height: 1.5; }
+
+        /* Utility */
+        .active-view { display: flex !important; }
+        .section-title { font-size: 16px; font-weight: 600; margin-bottom: 15px; color: #333; border-left: 4px solid #1890ff; padding-left: 8px; }
+
+    </style>
+</head>
+<body>
+
+    <div class="sidebar">
+        <div class="nav-item active" onclick="switchView('graph')" title="风险图谱 (Graph)">
+            <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"></circle><circle cx="6" cy="12" r="3"></circle><circle cx="18" cy="19" r="3"></circle><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line></svg>
+        </div>
+        <div class="nav-item" onclick="switchView('table')" title="知识库列表 (Knowledge Base)">
+            <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+        </div>
+    </div>
+
+    <div class="main-area">
+        <div class="header">
+            <div>
+                <h1 id="case-title">Loading...</h1>
+                <div style="font-size: 12px; color: #999; margin-top: 5px;">Case ID: <span id="case-id">---</span></div>
+            </div>
+            <div class="case-meta" id="case-tags">
+                </div>
+        </div>
+
+        <div class="content-wrapper">
+            
+            <div class="center-panel">
+                
+                <div id="view-graph" class="active-view">
+                    <div class="section-title">🕸️ 资金链路与团伙关联图谱</div>
+                    <div style="font-size: 12px; color: #666; margin-bottom: 10px; background: #fffbe6; padding: 8px; border: 1px solid #ffe58f; border-radius: 4px;">
+                        💡 提示：红色节点为黑产团伙，蓝色为嫌疑账户，绿色为IP设施。支持滚轮缩放与拖拽。
+                    </div>
+                    <div id="g6-container"></div>
+                </div>
+
+                <div id="view-table">
+                    <div class="section-title">📚 专家经验与相似案例召回 (RAG)</div>
+                    <div style="font-size: 12px; color: #666; margin-bottom: 10px;">
+                        以下列表为 Agent 根据当前案件特征，从向量数据库中召回的 Top-5 关联知识。
+                    </div>
+                    <table class="kb-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 60px;">匹配度</th>
+                                <th style="width: 80px;">类型</th>
+                                <th>知识标题 / 摘要</th>
+                                <th style="width: 100px;">来源</th>
+                            </tr>
+                        </thead>
+                        <tbody id="kb-table-body">
+                            </tbody>
+                    </table>
+                </div>
+
+            </div>
+
+            <div class="right-panel">
+                <div class="section-title">🤖 Agent 智能研判过程</div>
+                <div id="agent-timeline">
+                    </div>
+            </div>
+
+        </div>
+    </div>
+
+<script>
+    // ============================================
+    // 1. Data Mock (包含图数据 + RAG知识库数据)
+    // ============================================
+    const caseData = {
+        "meta": {
+            "id": "CASE-20240520-PF-009",
+            "title": "团伙性跑分洗钱风险研判",
+            "tags": ["洗钱", "USDT", "设备农场"]
+        },
+        // 图谱数据
+        "graph": {
+            "nodes": [
+                { "id": "Main_Acc", "label": "主嫌疑人\n张三", "type": "Suspect", "color": "#1890ff" },
+                { "id": "IP_101", "label": "恶意IP\n103.45.x.x", "type": "Infra", "color": "#52c41a" },
+                { "id": "Dev_Sim", "label": "模拟器\nID: A892", "type": "Infra", "color": "#52c41a" },
+                { "id": "Gang_XYZ", "label": "黑产团伙\nGANG-XYZ", "type": "Gang", "color": "#f5222d", "size": 60 },
+                { "id": "Acc_B", "label": "关联账户\n李四", "type": "Suspect", "color": "#1890ff" },
+                { "id": "Acc_C", "label": "关联账户\n王五", "type": "Suspect", "color": "#1890ff" }
+            ],
+            "edges": [
+                { "source": "Main_Acc", "target": "IP_101", "label": "登录" },
+                { "source": "Main_Acc", "target": "Dev_Sim", "label": "使用" },
+                { "source": "Acc_B", "target": "IP_101", "label": "同IP" },
+                { "source": "Acc_C", "target": "Dev_Sim", "label": "同设备" },
+                { "source": "IP_101", "target": "Gang_XYZ", "label": "归属" }
+            ]
+        },
+        // RAG 召回的知识库数据 (用于表格展示)
+        "rag_references": [
+            { "score": 0.98, "type": "SOP", "title": "《针对休眠账户突发大额流水的处置规范 V3.0》", "summary": "定义了休眠账户激活后的三种高危特征：夜间交易、快进快出、设备突变。建议直接止付。", "source": "内部合规部" },
+            { "score": 0.95, "type": "Case", "title": "历史案件 #9201：东南亚杀猪盘资金归集", "summary": "该案件中，黑产使用 103.45.x.x 段 IP 进行批量登录，手法与当前案件完全一致。", "source": "历史案件库" },
+            { "score": 0.88, "type": "Intel", "title": "威胁情报：GANG-XYZ 新型洗钱手法通报", "summary": "情报显示该团伙开始通过购买虚拟币（USDT）进行二次清洗，与本案资金流向吻合。", "source": "外部情报源" },
+            { "score": 0.75, "type": "Rule", "title": "规则 R-1024 逻辑说明", "summary": "规则逻辑：(近3个月无交易) AND (单日入金>5万) AND (留存<100元)。", "source": "规则引擎组" },
+            { "score": 0.60, "type": "Doc", "title": "安卓模拟器特征识别技术白皮书", "summary": "介绍了如何通过底层指令集判断用户是否使用了雷电/夜神模拟器。", "source": "技术中台" }
+        ],
+        // Agent 思考过程
+        "timeline": [
+            { "title": "Step 1: 风险感知", "desc": "监测到账户在休眠 180 天后，于凌晨 2 点突发 50 笔交易。" },
+            { "title": "Step 2: 知识库召回", "desc": "检索到《休眠账户处置规范》(匹配度0.98)，确认为典型异常行为。" },
+            { "title": "Step 3: 团伙关联", "desc": "发现共用 IP 关联到已知黑产团伙 GANG-XYZ。" },
+            { "title": "Step 4: 最终决策", "desc": "判定为‘跑分’洗钱，建议执行【只收不付】管控。" }
+        ]
+    };
+
+    // ============================================
+    // 2. Logic Controller
+    // ============================================
+    
+    // View Switcher
+    function switchView(viewName) {
+        // Reset buttons
+        document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+        // Hide views
+        document.getElementById('view-graph').classList.remove('active-view');
+        document.getElementById('view-table').classList.remove('active-view');
+
+        // Activate selected
+        if (viewName === 'graph') {
+            document.querySelectorAll('.nav-item')[0].classList.add('active');
+            document.getElementById('view-graph').classList.add('active-view');
+        } else {
+            document.querySelectorAll('.nav-item')[1].classList.add('active');
+            document.getElementById('view-table').classList.add('active-view');
+        }
+    }
+
+    // Init Logic
+    function init() {
+        // 1. Header Info
+        document.getElementById('case-title').innerText = caseData.meta.title;
+        document.getElementById('case-id').innerText = caseData.meta.id;
+        const tagContainer = document.getElementById('case-tags');
+        caseData.meta.tags.forEach(t => {
+            tagContainer.innerHTML += `<span>${t}</span>`;
+        });
+
+        // 2. Render Timeline
+        const tlContainer = document.getElementById('agent-timeline');
+        caseData.timeline.forEach(step => {
+            tlContainer.innerHTML += `
+                <div class="timeline-item">
+                    <div class="t-title">${step.title}</div>
+                    <div class="t-desc">${step.desc}</div>
+                </div>
+            `;
+        });
+
+        // 3. Render Knowledge Table
+        const tableBody = document.getElementById('kb-table-body');
+        caseData.rag_references.forEach(ref => {
+            const scoreClass = ref.score > 0.9 ? 'score-high' : 'score-mid';
+            tableBody.innerHTML += `
+                <tr>
+                    <td><span class="score-badge ${scoreClass}">${(ref.score * 100).toFixed(0)}%</span></td>
+                    <td><span class="type-badge">${ref.type}</span></td>
+                    <td>
+                        <div style="font-weight:500; margin-bottom:4px;">${ref.title}</div>
+                        <div style="color:#888; font-size:12px;">${ref.summary}</div>
+                    </td>
+                    <td style="color:#666;">${ref.source}</td>
+                </tr>
+            `;
+        });
+
+        // 4. Render Graph (G6)
+        renderGraph();
+    }
+
+    function renderGraph() {
+        const container = document.getElementById('g6-container');
+        const width = container.offsetWidth;
+        const height = container.offsetHeight || 600;
+
+        const graph = new G6.Graph({
+            container: 'g6-container',
+            width: width,
+            height: height,
+            layout: {
+                type: 'force',
+                preventOverlap: true,
+                linkDistance: 100,
+                nodeStrength: -50
+            },
+            modes: { default: ['drag-canvas', 'zoom-canvas', 'drag-node'] },
+            defaultNode: { size: 40, style: { lineWidth: 2, fill: '#fff' } },
+            defaultEdge: { style: { stroke: '#ddd', endArrow: true } }
+        });
+
+        const data = {
+            nodes: caseData.graph.nodes.map(n => ({
+                id: n.id,
+                label: n.label,
+                size: n.size || 40,
+                style: { stroke: n.color, fill: n.color + '15' }, // 浅色填充
+                labelCfg: { style: { fill: '#333' }, position: 'bottom' }
+            })),
+            edges: caseData.graph.edges
+        };
+
+        graph.data(data);
+        graph.render();
+
+        // Resize Listener
+        window.onresize = () => {
+            if(!graph.get('destroyed')) graph.changeSize(container.offsetWidth, container.offsetHeight);
+        }
+    }
+
+    // Run
+    init();
+
+</script>
+</body>
+</html>
